@@ -143,7 +143,7 @@ pub fn execute_flip(
     };
     FHISTORY.save(deps.storage, cfg.flip_count, &record)?;
 
-    cfg.rps_count += 1;
+    cfg.flip_count += 1;
     CONFIG.save(deps.storage, &cfg)?;
     
     return Ok(Response::new()
@@ -283,8 +283,8 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} 
             => to_binary(&query_config(deps, env)?),
-        QueryMsg::RHistory {count} => to_binary(&query_rhistory(deps, count)?),
-        QueryMsg::FHistory {count} => to_binary(&query_fhistory(deps, count)?),
+        QueryMsg::RistoryMsg {count} => to_binary(&query_rhistory(deps, count)?),
+        QueryMsg::FistoryMsg {count} => to_binary(&query_fhistory(deps, count)?),
     }
 }
 

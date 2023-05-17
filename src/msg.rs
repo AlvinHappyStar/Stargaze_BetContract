@@ -30,10 +30,10 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
-    RHistory {
+    RistoryMsg {
         count: u32
     },
-    FHistory {
+    FistoryMsg {
         count: u32
     }
 }

@@ -175,7 +175,7 @@ ClaimFlip() {
 
 ClaimRPS() {
     CONTRACT_INCENTIVE=$(cat $ADDRESS_DIR"incentive")
-    echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"flip": {"level": 0}}' --amount 2000000ustars --from st $TXFLAG -y)
+    echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"rps": {"level": 0}}' --amount 2000000ustars --from st $TXFLAG -y)
 }
 
 WithDraw() {
@@ -250,8 +250,8 @@ if [[ $FUNCTION == "" ]]; then
     
     # InstantiateIncentive
     # ClaimRPS
-    # ClaimFlip
-    WithDraw
+    ClaimFlip
+    # WithDraw
     #printf "y\npassword\n" | Upload
     # # CATEGORY=cw20_base
     # # printf "y\npassword\n" | Upload
