@@ -1,0 +1,1 @@
+Stargaze Bet Contract
