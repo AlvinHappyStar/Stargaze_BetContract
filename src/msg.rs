@@ -18,6 +18,9 @@ pub enum ExecuteMsg {
     Flip {
         level: u64
     },
+    Rps {
+        level: u64
+    },
     Withdraw {
         amount: Uint128
     }
@@ -27,9 +30,12 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
-    History {
+    RHistory {
         count: u32
     },
+    FHistory {
+        count: u32
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -39,11 +45,12 @@ pub struct ConfigResponse {
     pub enabled: bool,
     pub denom: Denom,
     pub treasury_amount: Uint128,
-    pub flip_count: u64
+    pub flip_count: u64,
+    pub rps_count: u64
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct History {
+pub struct RHistory {
     pub id: u64,
     pub address: Addr,
     pub level: u64,
@@ -53,8 +60,23 @@ pub struct History {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct HistoryResponse {
-    pub list: Vec<History>
+pub struct RHistoryResponse {
+    pub list: Vec<RHistory>
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct FHistory {
+    pub id: u64,
+    pub address: Addr,
+    pub level: u64,
+    pub win: Option<u8>,
+    pub bet_amount: Uint128,
+    pub timestamp: u64
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct FHistoryResponse {
+    pub list: Vec<FHistory>
 }
 
 
@@ -63,7 +85,7 @@ pub struct HashObj {
     pub time: u64,
     pub address: Addr,
     pub level: u64,
-    pub flip_count: u64
+    pub count: u64
 }
 
 

@@ -58,7 +58,7 @@ TXFLAG=" $NODECHAIN --gas-prices 0.01$DENOM --gas auto --gas-adjustment 1.3"
 
 
 RELEASE_DIR="release/"
-INFO_DIR="../juno-scripts/info/"
+INFO_DIR="../scripts/info/"
 INFONET_DIR=$INFO_DIR$NETWORK"/"
 CODE_DIR=$INFONET_DIR"code/"
 ADDRESS_DIR=$INFONET_DIR"address/"
@@ -114,7 +114,7 @@ Upload() {
     cd ..
     echo "================================================="
     echo "Upload $CATEGORY"
-    UPLOADTX=$(starsd tx wasm store ./release/rps.wasm $WALLET $TXFLAG --output json -y | jq -r '.txhash')
+    UPLOADTX=$(starsd tx wasm store ./release/*.wasm $WALLET $TXFLAG --output json -y | jq -r '.txhash')
     
     echo "Upload txHash:"$UPLOADTX
     
@@ -130,7 +130,7 @@ Upload() {
     
     echo "Contract Code_id:"$CODE_ID
 
-    cd juno-scripts
+    cd scripts
     #save to FILE_CODE_ID
     echo $CODE_ID > $CODE_DIR$CATEGORY
 }
@@ -168,14 +168,19 @@ InstantiateIncentive() {
 }
 
 
-ClaimReward() {
+ClaimFlip() {
+    CONTRACT_INCENTIVE=$(cat $ADDRESS_DIR"incentive")
+    echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"flip": {"level": 0}}' --amount 2000000ustars --from st $TXFLAG -y)
+}
+
+ClaimRPS() {
     CONTRACT_INCENTIVE=$(cat $ADDRESS_DIR"incentive")
     echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"flip": {"level": 0}}' --amount 2000000ustars --from st $TXFLAG -y)
 }
 
 WithDraw() {
     CONTRACT_INCENTIVE=$(cat $ADDRESS_DIR"incentive")
-    echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"withdraw": {"amount": "500000"}}' --from st $TXFLAG -y)
+    echo $(starsd tx wasm execute $CONTRACT_INCENTIVE '{"withdraw": {"amount": "5000000"}}' --from testnet-key $TXFLAG -y)
 }
 
 Stake() {
@@ -244,8 +249,9 @@ if [[ $FUNCTION == "" ]]; then
     #  Upload
     
     # InstantiateIncentive
-    ClaimReward
-    # WithDraw
+    # ClaimRPS
+    # ClaimFlip
+    WithDraw
     #printf "y\npassword\n" | Upload
     # # CATEGORY=cw20_base
     # # printf "y\npassword\n" | Upload

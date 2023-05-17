@@ -1,5 +1,5 @@
 [package]
-name = "rps"
+name = "bet"
 version = "0.0.1"
 authors = ["arnold", ""]
 edition = "2018"

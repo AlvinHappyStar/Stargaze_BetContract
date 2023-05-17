@@ -9,17 +9,17 @@ use std::collections::hash_map::DefaultHasher;
 use cw2::{get_contract_version, set_contract_version};
 use crate::error::ContractError;
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, History, HistoryResponse
+    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, RHistory, RHistoryResponse, FHistory, FHistoryResponse 
 };
 use cw20::{Balance};
 use crate::state::{
-    Config, CONFIG, HISTORY
+    Config, CONFIG, RHISTORY, FHISTORY
 };
 
 use crate::util;
 use crate::constants;
 // Version info, for migration info
-const CONTRACT_NAME: &str = "rps";
+const CONTRACT_NAME: &str = "bet";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -35,7 +35,8 @@ pub fn instantiate(
         owner: info.sender.clone(),
         denom: cw20::Denom::Native(info.funds[0].denom.clone()),
         enabled: true,
-        flip_count: 0u64
+        flip_count: 0u64,
+        rps_count: 0u64
     };
     
     CONFIG.save(deps.storage, &config)?;
@@ -53,7 +54,8 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateOwner { owner } => util::execute_update_owner(deps.storage, deps.api, info.sender.clone(), owner),
         ExecuteMsg::UpdateEnabled { enabled } => util::execute_update_enabled(deps.storage, deps.api, info.sender.clone(), enabled),
-        ExecuteMsg::Flip { level } => execute_flip(deps, env, info, level),   
+        ExecuteMsg::Flip { level } => execute_flip(deps, env, info, level),
+        ExecuteMsg::Rps { level } => execute_rps(deps, env, info, level),
         ExecuteMsg::Withdraw { amount } => execute_withdraw(deps, env, info, amount)     
     }
 }
@@ -85,6 +87,90 @@ pub fn execute_flip(
 
     let amount = util::get_amount_of_denom(balance, cfg.denom.clone())?;
 
+    if level != 0 && level != 1 {
+        return Err(ContractError::InvalidBet {});
+    }
+
+    // Do flip   
+    let obj = HashObj {
+        time: env.block.time.seconds(),
+        address: info.sender.clone(),
+        level,
+        count: cfg.flip_count
+    };
+
+    let hash = calculate_hash(&obj);
+    
+    let mut win = Some(1);
+    
+    if hash % 2 == 0 {
+        win = Some(0);
+    }
+    
+    let mut reward_amount = Uint128::zero();
+
+    let owner_amount = amount * Uint128::from(constants::OWNER_RATE) / Uint128::from(constants::MULTIPLY);
+    reward_amount = amount * Uint128::from(constants::REWARD_RATE) - owner_amount;
+
+    let contract_amount = util::get_token_amount_of_address(deps.querier, cfg.denom.clone(), env.contract.address.clone())?;
+
+    if contract_amount < reward_amount {
+        win = Some(1);
+    }
+
+    let mut messages:Vec<CosmosMsg> = vec![];
+    messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), owner_amount, deps.api.addr_validate(constants::TREASURY_ADDR)?)?);
+
+    match win {
+        Some(0) => {
+            //Player wins            
+            messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), reward_amount, info.sender.clone())?);
+        }
+        Some(1) => {
+            //Player Lose
+        }
+        _ => {
+        }
+    }
+
+    let record = FHistory {
+        id: cfg.flip_count + 1,
+        address: info.sender.clone(),
+        level,
+        win,
+        bet_amount: amount,
+        timestamp: env.block.time.seconds()
+    };
+    FHISTORY.save(deps.storage, cfg.flip_count, &record)?;
+
+    cfg.rps_count += 1;
+    CONFIG.save(deps.storage, &cfg)?;
+    
+    return Ok(Response::new()
+        .add_messages(messages)
+        .add_attributes(vec![
+            attr("action", "flip"),
+            attr("address", info.sender.clone()),
+            attr("amount", amount),
+            attr("win", win.expect("u8").to_string()),
+        ]));
+}
+
+pub fn execute_rps(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    level: u64
+) -> Result<Response, ContractError> {
+
+    util::check_enabled(deps.storage)?;
+
+    let mut cfg = CONFIG.load(deps.storage)?;
+
+    let balance = Balance::from(info.funds);
+
+    let amount = util::get_amount_of_denom(balance, cfg.denom.clone())?;
+
     if level != 0 && level != 1 && level != 2{
         return Err(ContractError::InvalidBet {});
     }
@@ -94,7 +180,7 @@ pub fn execute_flip(
         time: env.block.time.seconds(),
         address: info.sender.clone(),
         level,
-        flip_count: cfg.flip_count
+        count: cfg.rps_count
     };
 
     let hash = calculate_hash(&obj);
@@ -104,16 +190,22 @@ pub fn execute_flip(
     let mut reward_amount = Uint128::zero();
 
     let owner_amount = amount * Uint128::from(constants::OWNER_RATE) / Uint128::from(constants::MULTIPLY);
+    reward_amount = amount * Uint128::from(constants::REWARD_RATE) - owner_amount;
 
-    let win = get_winner(level, cpu_move);
+    let contract_amount = util::get_token_amount_of_address(deps.querier, cfg.denom.clone(), env.contract.address.clone())?;
+
+    let mut win = get_winner(level, cpu_move);
+
+    if contract_amount < reward_amount {
+        win = Some(2);
+    }
 
     let mut messages:Vec<CosmosMsg> = vec![];
     messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), owner_amount, deps.api.addr_validate(constants::TREASURY_ADDR)?)?);
 
     match win {
         Some(0) => {
-            //Player wins
-            reward_amount = amount * Uint128::from(constants::REWARD_RATE) - owner_amount;
+            //Player wins            
             messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), reward_amount, info.sender.clone())?);
         }
         Some(2) => {
@@ -126,23 +218,23 @@ pub fn execute_flip(
         }
     }
 
-    let record = History {
-        id: cfg.flip_count + 1,
+    let record = RHistory {
+        id: cfg.rps_count + 1,
         address: info.sender.clone(),
         level,
         win,
         bet_amount: amount,
         timestamp: env.block.time.seconds()
     };
-    HISTORY.save(deps.storage, cfg.flip_count, &record)?;
+    RHISTORY.save(deps.storage, cfg.rps_count, &record)?;
 
-    cfg.flip_count += 1;
+    cfg.rps_count += 1;
     CONFIG.save(deps.storage, &cfg)?;
     
     return Ok(Response::new()
         .add_messages(messages)
         .add_attributes(vec![
-            attr("action", "flip"),
+            attr("action", "rps"),
             attr("address", info.sender.clone()),
             attr("amount", amount),
             attr("win", win.expect("u8").to_string()),
@@ -191,7 +283,8 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} 
             => to_binary(&query_config(deps, env)?),
-        QueryMsg::History {count} => to_binary(&query_history(deps, count)?),
+        QueryMsg::RHistory {count} => to_binary(&query_rhistory(deps, count)?),
+        QueryMsg::FHistory {count} => to_binary(&query_fhistory(deps, count)?),
     }
 }
 
@@ -203,24 +296,44 @@ pub fn query_config(deps: Deps, env: Env) -> StdResult<ConfigResponse> {
         treasury_amount,
         denom: cfg.denom,
         enabled: cfg.enabled,
-        flip_count: cfg.flip_count
+        flip_count: cfg.flip_count,
+        rps_count: cfg.rps_count
     })
 }
 
-fn query_history(
+fn query_rhistory(
     deps: Deps,
     count: u32
-) -> StdResult<HistoryResponse> {
+) -> StdResult<RHistoryResponse> {
+    let cfg = CONFIG.load(deps.storage)?;
+
+    let real_count = cfg.rps_count.min(count as u64) as usize;
+
+    let mut list:Vec<RHistory> = vec![];
+    for i in 0..real_count {
+        list.push(RHISTORY.load(deps.storage, cfg.rps_count - 1 - i as u64)?);
+    }
+    
+    Ok(RHistoryResponse {
+        list
+    })
+    
+}
+
+fn query_fhistory(
+    deps: Deps,
+    count: u32
+) -> StdResult<FHistoryResponse> {
     let cfg = CONFIG.load(deps.storage)?;
 
     let real_count = cfg.flip_count.min(count as u64) as usize;
 
-    let mut list:Vec<History> = vec![];
+    let mut list:Vec<FHistory> = vec![];
     for i in 0..real_count {
-        list.push(HISTORY.load(deps.storage, cfg.flip_count - 1 - i as u64)?);
+        list.push(FHISTORY.load(deps.storage, cfg.flip_count - 1 - i as u64)?);
     }
     
-    Ok(HistoryResponse {
+    Ok(FHistoryResponse {
         list
     })
     
