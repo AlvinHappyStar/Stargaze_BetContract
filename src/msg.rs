@@ -21,6 +21,9 @@ pub enum ExecuteMsg {
     Rps {
         level: u64
     },
+    Dice {
+        level: u64
+    },
     Withdraw {
         amount: Uint128
     }
@@ -34,6 +37,9 @@ pub enum QueryMsg {
         count: u32
     },
     FistoryMsg {
+        count: u32
+    },
+    DistoryMsg {
         count: u32
     }
 }
@@ -77,6 +83,21 @@ pub struct FHistory {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct FHistoryResponse {
     pub list: Vec<FHistory>
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct DHistory {
+    pub id: u64,
+    pub address: Addr,
+    pub level: u64,
+    pub win: Option<u8>,
+    pub bet_amount: Uint128,
+    pub timestamp: u64
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct DHistoryResponse {
+    pub list: Vec<DHistory>
 }
 
 

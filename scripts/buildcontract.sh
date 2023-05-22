@@ -42,22 +42,22 @@ case $NETWORK in
     ADDR_ADMIN="stars1xs662ygzwynw8tjv96wxrqnywee59ylzes0fkj"
     ;;
   mainnet)
-    NODE="https://rpc-juno.itastakers.com:443"
-    DENOM=ujuno
-    CHAIN_ID=juno-1
+    NODE="https://rpc-stargaze-ia.cosmosia.notional.ventures:443"
+    DENOM=ustars
+    CHAIN_ID=stargaze-1
     LP_TOKEN_CODE_ID=1
-    WALLET="--from lucas"
-    ADDR_ADMIN=$ADDR_LUCAS
+    WALLET="--from mainnet-key"
+    ADDR_ADMIN="stars1qdv6ww4kc387r0c2gfkffm4jn04g9xz50nuvdv"
     ;;
 esac
 
 NODECHAIN=" --node $NODE --chain-id $CHAIN_ID"
-TXFLAG=" $NODECHAIN --gas-prices 0.01$DENOM --gas auto --gas-adjustment 1.3"
+TXFLAG=" $NODECHAIN --gas-prices 0.01$DENOM  --gas auto --gas-adjustment 1.3"
 
 
 
 
-RELEASE_DIR="release/"
+RELEASE_DIR="../release/"
 INFO_DIR="../scripts/info/"
 INFONET_DIR=$INFO_DIR$NETWORK"/"
 CODE_DIR=$INFONET_DIR"code/"
@@ -245,12 +245,12 @@ PrintWalletBalance() {
 #################################### End of Function ###################################################
 if [[ $FUNCTION == "" ]]; then
     #  RustBuild
-    # CATEGORY=incentive
-    #  Upload
+    CATEGORY=incentive
+     Upload
     
-    # InstantiateIncentive
+    InstantiateIncentive
     # ClaimRPS
-    ClaimFlip
+    # ClaimFlip
     # WithDraw
     #printf "y\npassword\n" | Upload
     # # CATEGORY=cw20_base

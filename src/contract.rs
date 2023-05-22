@@ -9,11 +9,11 @@ use std::collections::hash_map::DefaultHasher;
 use cw2::{get_contract_version, set_contract_version};
 use crate::error::ContractError;
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, RHistory, RHistoryResponse, FHistory, FHistoryResponse 
+    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, RHistory, RHistoryResponse, FHistory, FHistoryResponse, DHistory, DHistoryResponse
 };
 use cw20::{Balance};
 use crate::state::{
-    Config, CONFIG, RHISTORY, FHISTORY
+    Config, CONFIG, RHISTORY, FHISTORY, DHISTORY
 };
 
 use crate::util;
@@ -36,7 +36,8 @@ pub fn instantiate(
         denom: cw20::Denom::Native(info.funds[0].denom.clone()),
         enabled: true,
         flip_count: 0u64,
-        rps_count: 0u64
+        rps_count: 0u64,
+        dice_count: 0u64
     };
     
     CONFIG.save(deps.storage, &config)?;
@@ -56,6 +57,7 @@ pub fn execute(
         ExecuteMsg::UpdateEnabled { enabled } => util::execute_update_enabled(deps.storage, deps.api, info.sender.clone(), enabled),
         ExecuteMsg::Flip { level } => execute_flip(deps, env, info, level),
         ExecuteMsg::Rps { level } => execute_rps(deps, env, info, level),
+        ExecuteMsg::Dice { level } => execute_dice(deps, env, info, level),
         ExecuteMsg::Withdraw { amount } => execute_withdraw(deps, env, info, amount)     
     }
 }
@@ -241,6 +243,91 @@ pub fn execute_rps(
         ]));
 }
 
+pub fn execute_dice(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    level: u64
+) -> Result<Response, ContractError> {
+
+    util::check_enabled(deps.storage)?;
+
+    let mut cfg = CONFIG.load(deps.storage)?;
+
+    let balance = Balance::from(info.funds);
+
+    let amount = util::get_amount_of_denom(balance, cfg.denom.clone())?;
+
+    if level != 0 && level != 1 {
+        return Err(ContractError::InvalidBet {});
+    }
+
+    // Do flip   
+    let obj = HashObj {
+        time: env.block.time.seconds(),
+        address: info.sender.clone(),
+        level,
+        count: cfg.dice_count
+    };
+
+    let mut hash = calculate_hash(&obj) % 6;
+    
+    let mut win = Some(1);
+    
+    if hash % 2 == level {
+        win = Some(0);
+    }
+    
+    let mut reward_amount = Uint128::zero();
+
+    let owner_amount = amount * Uint128::from(constants::OWNER_RATE) / Uint128::from(constants::MULTIPLY);
+    reward_amount = amount * Uint128::from(constants::REWARD_RATE) - owner_amount;
+
+    let contract_amount = util::get_token_amount_of_address(deps.querier, cfg.denom.clone(), env.contract.address.clone())?;
+
+    if contract_amount < reward_amount {
+        win = Some(1);
+        hash = hash + 1;
+    }
+
+    let mut messages:Vec<CosmosMsg> = vec![];
+    messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), owner_amount, deps.api.addr_validate(constants::TREASURY_ADDR)?)?);
+
+    match win {
+        Some(0) => {
+            //Player wins            
+            messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), reward_amount, info.sender.clone())?);
+        }
+        Some(1) => {
+            //Player Lose            
+        }
+        _ => {
+        }
+    }
+
+    let record = DHistory {
+        id: cfg.dice_count + 1,
+        address: info.sender.clone(),
+        level,
+        win,
+        bet_amount: amount,
+        timestamp: env.block.time.seconds()
+    };
+    DHISTORY.save(deps.storage, cfg.dice_count, &record)?;
+
+    cfg.dice_count += 1;
+    CONFIG.save(deps.storage, &cfg)?;
+    
+    return Ok(Response::new()
+        .add_messages(messages)
+        .add_attributes(vec![
+            attr("action", "dice"),
+            attr("address", info.sender.clone()),
+            attr("amount", amount),
+            attr("win", hash.to_string()),
+        ]));
+}
+
 pub fn execute_withdraw(
     deps: DepsMut,
     env: Env,
@@ -285,6 +372,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             => to_binary(&query_config(deps, env)?),
         QueryMsg::RistoryMsg {count} => to_binary(&query_rhistory(deps, count)?),
         QueryMsg::FistoryMsg {count} => to_binary(&query_fhistory(deps, count)?),
+        QueryMsg::DistoryMsg {count} => to_binary(&query_dhistory(deps, count)?),
     }
 }
 
@@ -334,6 +422,25 @@ fn query_fhistory(
     }
     
     Ok(FHistoryResponse {
+        list
+    })
+    
+}
+
+fn query_dhistory(
+    deps: Deps,
+    count: u32
+) -> StdResult<DHistoryResponse> {
+    let cfg = CONFIG.load(deps.storage)?;
+
+    let real_count = cfg.dice_count.min(count as u64) as usize;
+
+    let mut list:Vec<DHistory> = vec![];
+    for i in 0..real_count {
+        list.push(DHISTORY.load(deps.storage, cfg.dice_count - 1 - i as u64)?);
+    }
+    
+    Ok(DHistoryResponse {
         list
     })
     
