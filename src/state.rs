@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr};
 use crate::msg::{
-    RHistory, FHistory, DHistory
+    RHistory, FHistory, DHistory, BHistory
 };
 use cw_storage_plus::{Item, Map};
 use cw20::Denom;
@@ -18,6 +18,7 @@ pub struct Config {
     pub flip_count: u64,
     pub rps_count: u64,
     pub dice_count: u64,
+    pub roulette_count: u64
 }
 
 pub const CONFIG_KEY: &str = "config";
@@ -31,3 +32,6 @@ pub const FHISTORY: Map<u64, FHistory> = Map::new(FHISTORY_KEY);
 
 pub const DHISTORY_KEY: &str = "dhistory";
 pub const DHISTORY: Map<u64, DHistory> = Map::new(DHISTORY_KEY);
+
+pub const BHISTORY_KEY: &str = "bhistory";
+pub const BHISTORY: Map<u64, BHistory> = Map::new(BHISTORY_KEY);

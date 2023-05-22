@@ -9,11 +9,11 @@ use std::collections::hash_map::DefaultHasher;
 use cw2::{get_contract_version, set_contract_version};
 use crate::error::ContractError;
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, RHistory, RHistoryResponse, FHistory, FHistoryResponse, DHistory, DHistoryResponse
+    ConfigResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, HashObj, RHistory, RHistoryResponse, FHistory, FHistoryResponse, DHistory, DHistoryResponse, BHistory, BHistoryResponse
 };
 use cw20::{Balance};
 use crate::state::{
-    Config, CONFIG, RHISTORY, FHISTORY, DHISTORY
+    Config, CONFIG, RHISTORY, FHISTORY, DHISTORY, BHISTORY
 };
 
 use crate::util;
@@ -37,7 +37,8 @@ pub fn instantiate(
         enabled: true,
         flip_count: 0u64,
         rps_count: 0u64,
-        dice_count: 0u64
+        dice_count: 0u64,
+        roulette_count: 0u64
     };
     
     CONFIG.save(deps.storage, &config)?;
@@ -58,6 +59,7 @@ pub fn execute(
         ExecuteMsg::Flip { level } => execute_flip(deps, env, info, level),
         ExecuteMsg::Rps { level } => execute_rps(deps, env, info, level),
         ExecuteMsg::Dice { level } => execute_dice(deps, env, info, level),
+        ExecuteMsg::Roulette { level } => execute_roulette(deps, env, info, level),
         ExecuteMsg::Withdraw { amount } => execute_withdraw(deps, env, info, amount)     
     }
 }
@@ -328,6 +330,180 @@ pub fn execute_dice(
         ]));
 }
 
+pub fn execute_roulette(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    level: u64
+) -> Result<Response, ContractError> {
+
+    util::check_enabled(deps.storage)?;
+
+    let mut cfg = CONFIG.load(deps.storage)?;
+
+    let balance = Balance::from(info.funds);
+
+    let amount = util::get_amount_of_denom(balance, cfg.denom.clone())?;
+
+    if level > 48 {
+        return Err(ContractError::InvalidBet {});
+    }
+
+    let red = [
+    1,
+    3,
+    5,
+    7,
+    9,
+    12,
+    14,
+    16,
+    18,
+    19,
+    21,
+    23,
+    25,
+    27,
+    30,
+    32,
+    34,
+    36
+  ];
+  let black = [
+    2,
+    4,
+    6,
+    8,
+    10,
+    11,
+    13,
+    15,
+    17,
+    20,
+    22,
+    24,
+    26,
+    28,
+    29,
+    31,
+    33,
+    35
+  ];
+
+    // Do flip   
+    let obj = HashObj {
+        time: env.block.time.seconds(),
+        address: info.sender.clone(),
+        level,
+        count: cfg.roulette_count
+    };
+
+    let mut hash = calculate_hash(&obj) % 37;
+    
+    let mut win = Some(1);
+    
+    if level == 37 && ((hash - 1) % 3 == 0)
+    {
+        win = Some(0);
+    }        
+    else if level == 38 && ((hash - 2) % 3 == 0)
+    {
+        win = Some(0);
+    }
+    else if level == 39 && (hash % 3 == 0)
+    {
+        win = Some(0);
+    }
+    else if level == 40 && (hash <= 12 && hash > 0)
+    {
+        win = Some(0);
+    }
+    else if level == 41 && (hash <= 24 && hash > 12)
+    {
+        win = Some(0);
+    }
+    else if level == 42 && (hash <= 36 && hash > 24)
+    {
+        win = Some(0);
+    }
+    else if level == 43 && (hash <= 18 && hash >= 1)
+    {
+        win = Some(0);
+    }
+    else if level == 44 && (hash <= 36 && hash >= 19)
+    {
+        win = Some(0);
+    }
+    else if level == 45 && (hash % 2 == 0)
+    {
+        win = Some(0);
+    }
+    else if level == 46 && (hash % 2 == 1)
+    {
+        win = Some(0);
+    }
+    else if level == 47 && (red.contains(&hash))
+    {
+        win = Some(0);
+    }
+    else if level == 48 && (black.contains(&hash))
+    {
+        win = Some(0);
+    }
+    else if level == hash
+    {
+        win = Some(0);
+    }
+    
+    let mut reward_amount = Uint128::zero();
+
+    let owner_amount = amount * Uint128::from(constants::OWNER_RATE) / Uint128::from(constants::MULTIPLY);
+    reward_amount = amount * Uint128::from(constants::REWARD_RATE) - owner_amount;
+
+    let contract_amount = util::get_token_amount_of_address(deps.querier, cfg.denom.clone(), env.contract.address.clone())?;
+
+    if contract_amount < reward_amount {
+        return Err(ContractError::InsufficientFunds {});
+    }
+
+    let mut messages:Vec<CosmosMsg> = vec![];
+    messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), owner_amount, deps.api.addr_validate(constants::TREASURY_ADDR)?)?);
+
+    match win {
+        Some(0) => {
+            //Player wins            
+            messages.push(util::transfer_token_message(deps.querier, cfg.denom.clone(), reward_amount, info.sender.clone())?);
+        }
+        Some(1) => {
+            //Player Lose            
+        }
+        _ => {
+        }
+    }
+
+    let record = BHistory {
+        id: cfg.roulette_count + 1,
+        address: info.sender.clone(),
+        level,
+        win,
+        bet_amount: amount,
+        timestamp: env.block.time.seconds()
+    };
+    BHISTORY.save(deps.storage, cfg.roulette_count, &record)?;
+
+    cfg.roulette_count += 1;
+    CONFIG.save(deps.storage, &cfg)?;
+    
+    return Ok(Response::new()
+        .add_messages(messages)
+        .add_attributes(vec![
+            attr("action", "dice"),
+            attr("address", info.sender.clone()),
+            attr("amount", amount),
+            attr("win", hash.to_string()),
+        ]));
+}
+
 pub fn execute_withdraw(
     deps: DepsMut,
     env: Env,
@@ -373,6 +549,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::RistoryMsg {count} => to_binary(&query_rhistory(deps, count)?),
         QueryMsg::FistoryMsg {count} => to_binary(&query_fhistory(deps, count)?),
         QueryMsg::DistoryMsg {count} => to_binary(&query_dhistory(deps, count)?),
+        QueryMsg::BistoryMsg {count} => to_binary(&query_bhistory(deps, count)?),
     }
 }
 
@@ -385,7 +562,9 @@ pub fn query_config(deps: Deps, env: Env) -> StdResult<ConfigResponse> {
         denom: cfg.denom,
         enabled: cfg.enabled,
         flip_count: cfg.flip_count,
-        rps_count: cfg.rps_count
+        rps_count: cfg.rps_count,
+        dice_count: cfg.dice_count,
+        roulette_count: cfg.roulette_count,
     })
 }
 
@@ -441,6 +620,25 @@ fn query_dhistory(
     }
     
     Ok(DHistoryResponse {
+        list
+    })
+    
+}
+
+fn query_bhistory(
+    deps: Deps,
+    count: u32
+) -> StdResult<BHistoryResponse> {
+    let cfg = CONFIG.load(deps.storage)?;
+
+    let real_count = cfg.roulette_count.min(count as u64) as usize;
+
+    let mut list:Vec<BHistory> = vec![];
+    for i in 0..real_count {
+        list.push(BHISTORY.load(deps.storage, cfg.roulette_count - 1 - i as u64)?);
+    }
+    
+    Ok(BHistoryResponse {
         list
     })
     
